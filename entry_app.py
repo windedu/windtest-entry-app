@@ -4,12 +4,6 @@ import os
 import pandas as pd
 from datetime import datetime
 
-# Environment Variables (You might need to set these in your run configuration or .env)
-# NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
-# STUDENT_DB_ID = "121222b6d30b80d7b306de6032cd0b6e"
-# Q_DB_ID = "66375aa0-47db-40c4-8f57-af2394eccb2d"
-# R_DB_ID = "37c461ab-6d2d-4ba1-8f0c-d612ab3f49a9"
-
 # Load secrets (local .streamlit/secrets.toml or Streamlit Cloud Secrets)
 try:
     NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
