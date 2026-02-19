@@ -4,6 +4,8 @@ import os
 import pandas as pd
 from datetime import datetime
 
+import re
+
 # Load secrets (local .streamlit/secrets.toml or Streamlit Cloud Secrets)
 try:
     NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
@@ -36,6 +38,15 @@ def init_session_state():
         st.session_state.questions = []
     if "selected_answers" not in st.session_state:
         st.session_state.selected_answers = {}
+
+def natural_sort_key(s):
+    """
+    Sorts strings containing numbers naturally.
+    Splits "1-1", "1-2", "1-10", "2" into ["1", "1"], ["1", "2"], ["1", "10"], ["2"].
+    """
+    return [int(text) if text.isdigit() else text.lower()
+            for text in re.split('([0-9]+)', s)]
+
 
 @st.cache_data(ttl=3600)
 def fetch_students():
@@ -184,6 +195,9 @@ def fetch_questions(test_name):
             parts = q_title.split("_")
             if len(parts) > 1:
                 q_label = parts[-1]
+                # Strip leading zeros, but keep "0" if it's just "0"
+                if len(q_label) > 1 and q_label.startswith("0"):
+                     q_label = q_label.lstrip("0")
 
         q_list.append({
             "id": q["id"],
@@ -195,6 +209,14 @@ def fetch_questions(test_name):
             "difficulty": props.get("난이도", {}).get("select", {}).get("name", ""),
             "score": props.get("배점", {}).get("number", 0) # Get Score
         })
+        
+
+    
+    # Sort q_list naturally by label
+    # This handles "1-1" < "1-2" < "1-10" < "2" correctly if logic is Right.
+    # Actually, "1-1" vs "2". split -> [1, "-", 1], [2]. 1 < 2. Correct.
+    # "1" vs "1-1". [1], [1, "-", 1]. 1 == 1. len 1 < len 3. "1" comes first. Correct.
+    q_list.sort(key=lambda x: natural_sort_key(x["label"]))
         
     return q_list
 
@@ -519,11 +541,37 @@ def parse_input_labels(text):
     text = text.replace(",", " ").replace(";", " ").replace("\n", " ")
     parts = text.split()
     for p in parts:
-        labels.append(p.strip())
+        val = p.strip()
+        # Strip leading zeros for matching logic (e.g. user types "03", match with "3")
+        if len(val) > 1 and val.startswith("0"):
+            val = val.lstrip("0")
+        labels.append(val)
     return labels
 
 def main():
     st.title("WindTest Result Entry")
+    
+    # Keyboard valid shortcut for saving (Cmd+Enter / Ctrl+Enter)
+    # This script finds the button with text "Save Results" or specific hierarchy and clicks it.
+    # Since we can't easily target by ID, we might need a workaround or assume the button exists.
+    # Better: Add a dummy form or global listener.
+    st.markdown("""
+    <script>
+    document.addEventListener('keydown', function(e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            // Target the "Save Results" button. 
+            // Streamlit buttons don't have stable IDs. We can look for inner text.
+            const buttons = Array.from(document.getElementsByTagName('button'));
+            const saveBtn = buttons.find(b => b.innerText.includes("Save Results"));
+            if (saveBtn) {
+                saveBtn.click();
+                e.preventDefault();
+            }
+        }
+    });
+    </script>
+    """, unsafe_allow_html=True)
+
     init_session_state()
     
     # Sidebar for selection
@@ -561,7 +609,7 @@ def main():
                 st.session_state.current_test = selected_test
                 # Clear previous answers if loading new
                 st.session_state.selected_answers = {} 
-                st.rerun()
+                st.experimental_rerun()
 
         # 3. Select Date
         exam_date = st.date_input("Exam Date", value=datetime.now())
@@ -591,11 +639,36 @@ def main():
             # Try matching by Email then Name
             matched_user = user_email_map.get(selected_config["email"])
             if not matched_user:
-                matched_user = user_name_map.get(selected_config["name"])
+                # Try Name Match
+                # 1. Exact Name
+                matched_user = user_name_map.get(selected_config["name"]) # e.g. 김지현
+                
+                if not matched_user:
+                    # 2. Try English Order / spaced check (e.g. Notion has "지현 김")
+                    # Normalized Notion names: remove spaces
+                    # But user_name_map keys are raw Notion names.
+                    target_name_clean = selected_config["name"].replace(" ", "") # 김지현
+                    
+                    for u_name, u_obj in user_name_map.items():
+                        # u_name e.g. "지현 김"
+                        u_clean = u_name.replace(" ", "") # 지현김
+                        
+                        # Direct clean match
+                        if u_clean == target_name_clean:
+                            matched_user = u_obj
+                            break
+                        
+                        # Reverse check (Korean Name "LastFirst" vs Notion "First Last")
+                        # u_name "지현 김" -> split ["지현", "김"] -> reverse ["김", "지현"] -> join "김지현"
+                        parts = u_name.split(" ")
+                        if len(parts) == 2:
+                            reversed_clean = "".join(list(reversed(parts))) # 김지현
+                            if reversed_clean == target_name_clean:
+                                matched_user = u_obj
+                                break
             
             if matched_user:
                 st.session_state.selected_teacher = matched_user
-                st.caption(f"Linked to Notion User: {matched_user['name']}")
             else:
                 st.warning(f"Notion User not found for {selected_teacher_name}. Report will be saved without teacher tag.")
                 # We can store the name temporarily in session state if needed, but DB requires ID for Person prop.
