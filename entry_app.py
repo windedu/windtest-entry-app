@@ -39,6 +39,15 @@ def init_session_state():
     if "selected_answers" not in st.session_state:
         st.session_state.selected_answers = {}
 
+def safe_rerun():
+    """Rerun the script, handling both new and old Streamlit versions."""
+    res = getattr(st, "rerun", None)
+    if res:
+        res()
+    else:
+        st.experimental_rerun()
+
+
 def natural_sort_key(s):
     """
     Sorts strings containing numbers naturally.
@@ -609,7 +618,7 @@ def main():
                 st.session_state.current_test = selected_test
                 # Clear previous answers if loading new
                 st.session_state.selected_answers = {} 
-                st.experimental_rerun()
+                safe_rerun()
 
         # 3. Select Date
         exam_date = st.date_input("Exam Date", value=datetime.now())
