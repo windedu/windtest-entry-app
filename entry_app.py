@@ -177,9 +177,18 @@ def fetch_questions(test_name):
             q_text = q_rich[0]["text"]["content"]
             
             
+        # Extract Question Number from Title
+        # Assume Title format: "TestName_{Number}"
+        q_label = str(len(q_list) + 1) # Default to sequential
+        if q_title:
+            parts = q_title.split("_")
+            if len(parts) > 1:
+                q_label = parts[-1]
+
         q_list.append({
             "id": q["id"],
             "title": q_title, # Store Title
+            "label": q_label, # Store Display Label
             "text": q_text,
             "unit": props.get("단원", {}).get("select", {}).get("name", ""),
             "type": [x["name"] for x in props.get("유형", {}).get("multi_select", [])],
@@ -501,21 +510,17 @@ def fetch_existing_results_full(student_id, test_name):
             
     return existing_map
 
-def parse_input_numbers(text):
-    """Parse comma/space separated numbers from text."""
-    nums = []
-    if not text: return nums
+def parse_input_labels(text):
+    """Parse comma/space/newline separated labels from text."""
+    labels = []
+    if not text: return labels
     
     # Replace common separators with space
-    text = text.replace(",", " ").replace(";", " ")
+    text = text.replace(",", " ").replace(";", " ").replace("\n", " ")
     parts = text.split()
     for p in parts:
-        try:
-            # Check if it's a range? For now just simple numbers
-            nums.append(int(p))
-        except:
-            pass
-    return nums
+        labels.append(p.strip())
+    return labels
 
 def main():
     st.title("WindTest Result Entry")
@@ -643,8 +648,8 @@ def main():
                 
                 if mode == "Individual Entry":
                     for i, q in enumerate(questions):
-                        # Display Question Number instead of Text
-                        st.markdown(f"**{i+1}번** ({q['unit']} / {q['type']} / {q['difficulty']})")
+                        # Display Question Label instead of Index
+                        st.markdown(f"**{q['label']}번** ({q['unit']} / {q['type']} / {q['difficulty']})")
                         
                         # Determine default
                         default_outcome = existing_results.get(q["id"], "정답") 
@@ -668,43 +673,34 @@ def main():
                         final_outcomes_to_save[q["id"]] = selection
                         
                 else: # Batch Input Modes
-                    st.info(f"Mode: {mode}. Please enter the **question numbers** (e.g. 1, 3, 5) separated by space, comma, or newline.")
+                    st.info(f"Mode: {mode}. Please enter the **question numbers** (e.g. 1-1, 03) separated by space, comma, or newline.")
                     
                     raw_input = st.text_area("Question Numbers", height=150)
                     
                     # Logic to parse and preview
-                    input_nums = parse_input_numbers(raw_input)
+                    input_labels = parse_input_labels(raw_input)
                     
                     st.markdown("### Preview")
-                    
-                    # We need to map 1-based index to question ID
-                    # questions list index i corresponds to number i+1
                     
                     preview_data = []
                     
                     for i, q in enumerate(questions):
-                        q_num = i + 1
+                        q_label = q["label"]
                         
                         if mode == "Input Correct Numbers":
-                            # If num in input -> Correct, else Incorrect
-                            # Wait, usually "Input Correct Numbers" means only these are correct, rest are WRONG?
-                            # Or "Input Incorrect Numbers" means only these are wrong, rest are CORRECT?
-                            # Use common sense: 
-                            # If I input Correct, I expect those to be "정답", others "오답".
-                            # If I input Incorrect, I expect those to be "오답", others "정답".
-                            
-                            if q_num in input_nums:
+                            # If label in input -> Correct, else Incorrect
+                            if q_label in input_labels:
                                 outcome = "정답"
                             else:
                                 outcome = "오답"
                         else: # Input Incorrect Numbers
-                            if q_num in input_nums:
+                            if q_label in input_labels:
                                 outcome = "오답"
                             else:
                                 outcome = "정답"
                                 
                         final_outcomes_to_save[q["id"]] = outcome
-                        preview_data.append({"No": q_num, "Result": outcome, "ID": q["id"]})
+                        preview_data.append({"No": q_label, "Result": outcome, "ID": q["id"]})
                         
                     # Show a dataframe or simple list for verification
                     st.dataframe(pd.DataFrame(preview_data)[["No", "Result"]], hide_index=True)
