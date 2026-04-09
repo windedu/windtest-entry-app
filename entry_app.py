@@ -135,7 +135,7 @@ def fetch_tests():
         if res.status_code == 200:
             data = res.json()
             props = data["properties"]
-            test_prop = props.get("시험명", {}).get("multi_select", {})
+            test_prop = props.get("시험명", {}).get("multi_select") or {}
             options = test_prop.get("options", [])
             return sorted([opt["name"] for opt in options])
         else:
@@ -213,10 +213,10 @@ def fetch_questions(test_name):
             "title": q_title, # Store Title
             "label": q_label, # Store Display Label
             "text": q_text,
-            "unit": props.get("단원", {}).get("select", {}).get("name", ""),
-            "type": [x["name"] for x in props.get("유형", {}).get("multi_select", [])],
-            "difficulty": props.get("난이도", {}).get("select", {}).get("name", ""),
-            "score": props.get("배점", {}).get("number", 0) # Get Score
+            "unit": (props.get("단원", {}).get("select") or {}).get("name", ""),
+            "type": [x["name"] for x in (props.get("유형", {}).get("multi_select") or [])],
+            "difficulty": (props.get("난이도", {}).get("select") or {}).get("name", ""),
+            "score": props.get("배점", {}).get("number") or 0 # Get Score
         })
         
 
@@ -266,6 +266,13 @@ def fetch_existing_results(student_id, test_name):
                 has_more = data["has_more"]
                 start_cursor = data["next_cursor"]
             else:
+                try:
+                    error_data = res.json()
+                    if res.status_code == 400 and error_data.get("code") == "validation_error" and "not found" in error_data.get("message", ""):
+                        # Option doesn't exist in DB schema yet, meaning no results can possibly exist.
+                        break
+                except ValueError:
+                    pass
                 st.error(f"Error fetching results: {res.text}")
                 break
         except Exception as e:
@@ -280,7 +287,7 @@ def fetch_existing_results(student_id, test_name):
         q_rels = props.get("문항", {}).get("relation", [])
         if q_rels:
             q_id = q_rels[0]["id"]
-            outcome = props.get("정오", {}).get("select", {}).get("name", "")
+            outcome = (props.get("정오", {}).get("select") or {}).get("name", "")
             existing_map[q_id] = outcome
             
     return existing_map
@@ -314,6 +321,15 @@ def create_report_entry(student_id, student_name, test_name, score, teacher_id, 
             results = res.json().get("results", [])
             if results:
                 existing_page_id = results[0]["id"]
+        else:
+            try:
+                error_data = res.json()
+                if res.status_code == 400 and error_data.get("code") == "validation_error" and "not found" in error_data.get("message", ""):
+                    pass # Option doesn't exist yet, so no existing page
+                else:
+                    print(f"Error querying report DB: {res.text}")
+            except ValueError:
+                print(f"Error querying report DB: {res.text}")
     except Exception as e:
         print(f"Error querying report DB: {e}")
 
